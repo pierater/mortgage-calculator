@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mortgage and Life Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --panel-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --tooltip-bg: #334155;
+            --tooltip-text: #f8fafc;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .dashboard {
+            display: flex;
+            flex-direction: row;
+            width: 100%;
+            max-width: 1600px;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+        .controls {
+            width: 420px;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+        .chart-container {
+            flex-grow: 1;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        h2 { margin-top: 0; font-size: 1.25rem; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+        .input-group {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+        .input-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .input-group input {
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        .input-group input[readonly] {
+            background-color: #f1f5f9;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+        .section-title {
+            margin: 20px 0 10px 0;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        /* Toggle CSS */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .toggle-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #475569;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            background: #cbd5e1;
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-switch.active {
+            background: var(--primary);
+        }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle-switch.active::after {
+            transform: translateX(18px);
+        }
+        .rental-fields { display: none; }
+        .rental-fields.visible { display: block; }
+
+        /* Tooltip CSS */
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            background-color: #cbd5e1;
+            color: #ffffff;
+            border-radius: 50%;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: help;
+        }
+        .tooltip-container:hover {
+            background-color: #94a3b8;
+        }
+        .tooltip-container .tooltip-text {
+            visibility: hidden;
+            width: 250px;
+            background-color: var(--tooltip-bg);
+            color: var(--tooltip-text);
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.75rem;
+            font-weight: normal;
+            line-height: 1.4;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+        }
+        .tooltip-container .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--tooltip-bg) transparent transparent transparent;
+        }
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+<div class="dashboard">
+    <div class="controls">
+        <div class="section-title">Home & Mortgage</div>
+        
+        <div class="input-group">
+            <label>
+                Purchase Price ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The total purchase price of the home. Affects downpayment and property tax calculations.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="purchase_price" value="1,200,000">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Mortgage Rate (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The annual interest rate for the 30-year fixed mortgage (e.g., 0.06 is 6%).</span>
+                </div>
+            </label>
+            <input type="number" step="0.001" min="0" id="mortgage_rate" value="0.06">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Mortgage Downpayment ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The initial upfront cash paid for the house. Automatically calculates and populates the Downpayment Perc variable.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="mortgage_downpayment" value="240,000">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Mortgage Downpayment Perc (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The percentage of the purchase price paid upfront. Automatically calculates and populates the Downpayment ($) variable.</span>
+                </div>
+            </label>
+            <input type="number" step="0.01" min="0" max="1" id="mortgage_downpayment_perc" value="0.20">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Prop Taxes Perc (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The total property tax percent. Automatically populates the Prop Taxes ($) variable based on the purchase price.</span>
+                </div>
+            </label>
+            <input type="number" step="0.001" min="0" id="prop_taxes_perc" value="0.015">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Prop Taxes ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The yearly property tax in dollars. Automatically computed: Purchase Price × Prop Taxes Perc.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="prop_taxes" value="7,500" readonly>
+        </div>
+
+        <div class="input-group">
+            <label>
+                Prop Tax Increase Perc (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The annual percentage increase in property taxes (e.g., 0.02 is 2% per year).</span>
+                </div>
+            </label>
+            <input type="number" step="0.01" min="0" id="prop_tax_increase_perc" value="0.02">
+        </div>
+
+        <div class="section-title">Income & Spending</div>
+        
+        <div class="input-group">
+            <label>
+                Post Tax W2 ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Your annual take-home pay after taxes. Used to compute monthly cashflow.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="post_tax_w2" value="800,000">
+        </div>
+        
+        <div class="toggle-group">
+            <div class="toggle-switch" id="halving_toggle"></div>
+            <label>Halve W2 Income</label>
+        </div>
+
+        <div class="rental-fields" id="halving_fields">
+            <div class="input-group">
+                <label>
+                    Years Before Halving Income
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The number of years before the Post Tax W2 income drops by exactly 50% (simulating part-time work or career downshifting).</span>
+                    </div>
+                </label>
+                <input type="number" min="0" max="30" id="years_before_halving_income" value="5">
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Annual Spending ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Total baseline amount of money spent per year (excluding the mortgage and property taxes).</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="spending" value="60,000">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Spending Increase Perc (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The percentage that spending increases year over year (simulating lifestyle creep or inflation).</span>
+                </div>
+            </label>
+            <input type="number" step="0.01" min="0" id="spending_increase_perc" value="0.03">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Max Spending Growth Value ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The hard cap limit. Spending will stop compounding once it reaches this maximum annual amount.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="max_spending_growth_value" value="120,000">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Years of Increasing Spending
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The maximum number of years to apply the Spending Increase Perc before spending flattens out.</span>
+                </div>
+            </label>
+            <input type="number" min="0" max="30" id="years_of_increasing_spending" value="10">
+        </div>
+
+        <div class="section-title">Investments & Rentals</div>
+        
+        <div class="input-group">
+            <label>
+                Total Investments Starting With ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Total liquid net worth before buying the house. The mortgage downpayment is subtracted from this to find your starting stocks.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="total_investments_starting_with" value="2,000,000">
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Stocks Starting Value ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The remainder of your savings put into a brokerage account. Automatically computed: Total Investments - Downpayment.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="stocks_starting_value" value="150,000" readonly>
+        </div>
+        
+        <div class="input-group">
+            <label>
+                Stock Growth Rate (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">The annual percentage your brokerage account investments grow by (e.g., 0.07 is 7%). Compounded monthly.</span>
+                </div>
+            </label>
+            <input type="number" step="0.01" min="0" id="stock_growth_rate" value="0.05">
+        </div>
+        
+        <div class="toggle-group">
+            <div class="toggle-switch active" id="rental_toggle"></div>
+            <label>Include Rental Property</label>
+        </div>
+
+        <div class="rental-fields visible" id="rental_fields">
+            <div class="input-group">
+                <label>
+                    Monthly Rental Income ($)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">Monthly passive income from other rental properties to supplement your W2 income.</span>
+                    </div>
+                </label>
+                <input type="text" data-type="currency" id="rental_income" value="5,000">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Income Growth Perc (Decimal)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The amount to raise rent year over year (e.g., 0.02 is 2% annual rent appreciation).</span>
+                    </div>
+                </label>
+                <input type="number" step="0.01" min="0" id="rental_income_growth_perc" value="0.02">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Mortgage Rate (Decimal)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The annual interest rate on the rental property mortgage (e.g., 0.065 is 6.5%).</span>
+                    </div>
+                </label>
+                <input type="number" step="0.001" min="0" id="rental_mortgage_rate" value="0.065">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Mortgage Balance ($)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The remaining principal balance on the rental property mortgage.</span>
+                    </div>
+                </label>
+                <input type="text" data-type="currency" id="rental_mortgage_balance" value="300,000">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Mortgage Years Remaining
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The number of years left on the rental property mortgage. The rental mortgage payment is included as an expense until this period ends.</span>
+                    </div>
+                </label>
+                <input type="number" min="0" max="30" id="rental_mortgage_years" value="25">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Monthly Rental Mortgage Cost ($)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The computed monthly mortgage payment for the rental property. Automatically calculated from rate, balance, and years remaining.</span>
+                    </div>
+                </label>
+                <input type="text" data-type="currency" id="rental_mortgage_monthly" value="0" readonly>
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Prop Taxes ($/yr)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The yearly property tax on the rental property.</span>
+                    </div>
+                </label>
+                <input type="text" data-type="currency" id="rental_prop_taxes" value="6,000">
+            </div>
+
+            <div class="input-group">
+                <label>
+                    Rental Prop Tax Increase Perc (Decimal)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">The annual percentage increase in rental property taxes (e.g., 0.02 is 2% per year).</span>
+                    </div>
+                </label>
+                <input type="number" step="0.01" min="0" id="rental_prop_tax_increase_perc" value="0.02">
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="lifeChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let lifeChartInstance = null;
+    let tooltipFrozen = false;
+    let frozenTooltipIndex = null;
+
+    // Get input elements
+    const inputs = {
+        p_price: document.getElementById('purchase_price'),
+        m_rate: document.getElementById('mortgage_rate'),
+        m_down: document.getElementById('mortgage_downpayment'),
+        m_down_perc: document.getElementById('mortgage_downpayment_perc'),
+        p_taxes_perc: document.getElementById('prop_taxes_perc'),
+        p_taxes: document.getElementById('prop_taxes'),
+        post_w2: document.getElementById('post_tax_w2'),
+        yrs_half_w2: document.getElementById('years_before_halving_income'),
+        spend: document.getElementById('spending'),
+        spend_inc: document.getElementById('spending_increase_perc'),
+        max_spend: document.getElementById('max_spending_growth_value'),
+        yrs_spend_inc: document.getElementById('years_of_increasing_spending'),
+        total_invest: document.getElementById('total_investments_starting_with'),
+        stocks_start: document.getElementById('stocks_starting_value'),
+        stock_growth: document.getElementById('stock_growth_rate'),
+        rent: document.getElementById('rental_income'),
+        rent_growth: document.getElementById('rental_income_growth_perc'),
+        rent_m_rate: document.getElementById('rental_mortgage_rate'),
+        rent_m_bal: document.getElementById('rental_mortgage_balance'),
+        rent_m_yrs: document.getElementById('rental_mortgage_years'),
+        rent_m_monthly: document.getElementById('rental_mortgage_monthly'),
+        rent_p_taxes: document.getElementById('rental_prop_taxes'),
+        rent_p_tax_inc: document.getElementById('rental_prop_tax_increase_perc'),
+        p_tax_inc: document.getElementById('prop_tax_increase_perc')
+    };
+
+    // Helper to extract raw numbers from comma-formatted strings
+    function getNum(val) {
+        if (typeof val === 'string') {
+            return Number(val.replace(/,/g, '')) || 0;
+        }
+        return Number(val) || 0;
+    }
+
+    // Helper to format numbers with commas
+    function formatNum(num) {
+        return Math.round(num).toLocaleString('en-US');
+    }
+
+    // Format input fields as user types
+    function formatCurrencyInput(e) {
+        if (e.target.dataset.type === 'currency') {
+            let cursorPos = e.target.selectionStart;
+            let oldValue = e.target.value;
+
+            // Count commas before cursor in the old value
+            let commasBefore = (oldValue.substring(0, cursorPos).match(/,/g) || []).length;
+
+            // Strip commas and format
+            let val = oldValue.replace(/,/g, '');
+            if (!isNaN(val) && val !== '' && val !== '-') {
+                let num = Number(val);
+                if (num < 0) num = 0;
+                e.target.value = num.toLocaleString('en-US');
+            }
+
+            // Count commas before the equivalent position in the new value
+            let digitPos = cursorPos - commasBefore; // cursor position in digits-only
+            let newCommas = 0;
+            let count = 0;
+            for (let i = 0; i < e.target.value.length; i++) {
+                if (e.target.value[i] === ',') {
+                    newCommas++;
+                } else {
+                    count++;
+                    if (count >= digitPos) break;
+                }
+            }
+            let newCursorPos = digitPos + newCommas;
+            newCursorPos = Math.max(0, Math.min(newCursorPos, e.target.value.length));
+            e.target.setSelectionRange(newCursorPos, newCursorPos);
+        }
+    }
+
+    // Auto-calculating relationships
+    function handleDependencies(e) {
+        const id = e.target.id;
+        const price = getNum(inputs.p_price.value);
+        
+        if (id === 'purchase_price' || id === 'mortgage_downpayment_perc') {
+            const perc = getNum(inputs.m_down_perc.value);
+            inputs.m_down.value = formatNum(price * perc);
+        }
+
+        if (id === 'mortgage_downpayment') {
+            const down = getNum(inputs.m_down.value);
+            if (price > 0) inputs.m_down_perc.value = (down / price).toFixed(4);
+        }
+
+        if (id === 'purchase_price' || id === 'prop_taxes_perc') {
+            const taxPerc = getNum(inputs.p_taxes_perc.value);
+            inputs.p_taxes.value = formatNum(price * taxPerc);
+        }
+
+        if (id === 'total_investments_starting_with' || id === 'mortgage_downpayment' || id === 'purchase_price' || id === 'mortgage_downpayment_perc') {
+            const totalInv = getNum(inputs.total_invest.value);
+            const down = getNum(inputs.m_down.value);
+            inputs.stocks_start.value = formatNum(totalInv - down);
+        }
+    }
+
+    function generateDataAndChart() {
+        // Read current values (stripping commas where necessary)
+        const p_price = getNum(inputs.p_price.value);
+        const m_rate = getNum(inputs.m_rate.value);
+        const m_down = getNum(inputs.m_down.value);
+        const post_w2 = getNum(inputs.post_w2.value);
+        const p_taxes = getNum(inputs.p_taxes.value);
+        const yrs_half_w2 = getNum(inputs.yrs_half_w2.value);
+        const spend = getNum(inputs.spend.value);
+        const spend_inc = getNum(inputs.spend_inc.value);
+        const max_spend = getNum(inputs.max_spend.value);
+        const yrs_spend_inc = getNum(inputs.yrs_spend_inc.value);
+        const stocks_start = getNum(inputs.stocks_start.value);
+        const stock_growth = getNum(inputs.stock_growth.value);
+        const rent = rentalEnabled ? getNum(inputs.rent.value) : 0;
+        const rent_growth = rentalEnabled ? getNum(inputs.rent_growth.value) : 0;
+        const rent_m_rate = rentalEnabled ? getNum(inputs.rent_m_rate.value) : 0;
+        const rent_m_bal = rentalEnabled ? getNum(inputs.rent_m_bal.value) : 0;
+        const rent_m_yrs = rentalEnabled ? getNum(inputs.rent_m_yrs.value) : 0;
+        const rent_p_taxes = rentalEnabled ? getNum(inputs.rent_p_taxes.value) : 0;
+        const rent_p_tax_inc = rentalEnabled ? getNum(inputs.rent_p_tax_inc.value) : 0;
+        const p_tax_inc = getNum(inputs.p_tax_inc.value);
+
+        // Mortgage Calculation
+        const P = p_price - m_down;
+        const r = m_rate / 12;
+        const M = (P > 0 && r > 0) ? (P * r * Math.pow(1+r, 360)) / (Math.pow(1+r, 360) - 1) : (P > 0 ? P / 360 : 0);
+
+        // Rental Mortgage Calculation
+        const rent_n = rent_m_yrs * 12;
+        const rent_r = rent_m_rate / 12;
+        const RM = (rent_m_bal > 0 && rent_r > 0 && rent_n > 0) ? (rent_m_bal * rent_r * Math.pow(1+rent_r, rent_n)) / (Math.pow(1+rent_r, rent_n) - 1) : (rent_m_bal > 0 && rent_n > 0 ? rent_m_bal / rent_n : 0);
+        inputs.rent_m_monthly.value = formatNum(RM);
+
+        // Timeseries arrays
+        const labels = [];
+        const mortgage_data = [];
+        const brokerage_data = [];
+        const w2_data = [];
+        const rent_data = [];
+        const prop_tax_data = [];
+        const gross_spending_data = [];
+        const net_income_data = [];
+
+        let current_brokerage = stocks_start;
+
+        // Simulate 360 months (30 years)
+        for (let month = 1; month <= 360; month++) {
+            let year = Math.floor((month - 1) / 12);
+            labels.push(`Year ${year} Month ${(month - 1) % 12 + 1}`);
+            
+            // Fixed Mortgage
+            mortgage_data.push(M);
+            
+            // Net W2 Income (halves after X years)
+            let current_w2_annual = (halvingEnabled && year >= yrs_half_w2) ? (post_w2 / 2) : post_w2;
+            let current_w2_monthly = current_w2_annual / 12;
+            w2_data.push(current_w2_monthly);
+            
+            // Rent Income (grows over time)
+            let current_rent_monthly = rent * Math.pow(1 + rent_growth, year);
+            rent_data.push(current_rent_monthly);
+            
+            // Property Tax (grows yearly)
+            let current_prop_tax_annual = p_taxes * Math.pow(1 + p_tax_inc, year);
+            let current_prop_tax_monthly = current_prop_tax_annual / 12;
+            prop_tax_data.push(current_prop_tax_monthly);
+
+            // Rental Mortgage (only while active)
+            let rental_mortgage_monthly = (month <= rent_n) ? RM : 0;
+
+            // Rental Property Tax (grows yearly)
+            let rental_prop_tax_monthly = (rent_p_taxes * Math.pow(1 + rent_p_tax_inc, year)) / 12;
+
+            // Gross Spending = base spend + property taxes + mortgage + rental mortgage + rental prop tax
+            let effective_yrs_inc = Math.min(year, yrs_spend_inc);
+            let current_spend_annual = spend * Math.pow(1 + spend_inc, effective_yrs_inc);
+            if (current_spend_annual > max_spend) current_spend_annual = max_spend;
+            let gross_spend_monthly = (current_spend_annual / 12) + current_prop_tax_monthly + M + rental_mortgage_monthly + rental_prop_tax_monthly;
+            gross_spending_data.push(gross_spend_monthly);
+
+            // Net Income = Total Income - Gross Spending
+            let net_income_monthly = (current_w2_monthly + current_rent_monthly) - gross_spend_monthly;
+
+            // Apply stock growth first
+            current_brokerage = current_brokerage * (1 + stock_growth / 12);
+
+            // If net income is negative, withdraw deficit from brokerage
+            if (net_income_monthly < 0) {
+                let deficit = -net_income_monthly;
+                let withdrawal = Math.min(deficit, current_brokerage);
+                current_brokerage -= withdrawal;
+                // Net income is 0 when stocks cover the deficit, negative only if stocks run out
+                net_income_monthly = (withdrawal >= deficit) ? 0 : net_income_monthly + withdrawal;
+            } else {
+                // Surplus goes into brokerage
+                current_brokerage += net_income_monthly;
+            }
+
+            net_income_data.push(net_income_monthly);
+            brokerage_data.push(current_brokerage);
+        }
+
+        renderChart(labels, mortgage_data, brokerage_data, w2_data, rent_data, prop_tax_data, gross_spending_data, net_income_data);
+    }
+
+    function renderChart(labels, m_data, b_data, w2_data, r_data, pt_data, gs_data, ni_data) {
+        const ctx = document.getElementById('lifeChart').getContext('2d');
+        
+        if (lifeChartInstance) {
+            lifeChartInstance.destroy();
+        }
+
+        lifeChartInstance = new Chart(ctx, {
+            type: 'line',
+            plugins: [{
+                id: 'freezeTooltip',
+                beforeEvent(chart, args) {
+                    if (tooltipFrozen && args.event.type === 'mousemove') {
+                        args.changed = false;
+                        return false;
+                    }
+                }
+            }],
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Monthly Mortgage Payment', data: m_data, borderColor: '#ef4444', backgroundColor: '#ef4444', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Brokerage Account Value', data: b_data, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, pointRadius: 0, yAxisID: 'y1' },
+                    { label: 'Net W2 Income', data: w2_data, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Rent Income', data: r_data, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Property Tax', data: pt_data, borderColor: '#f97316', backgroundColor: '#f97316', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Gross Spending', data: gs_data, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Net Income', data: ni_data, borderColor: '#ec4899', backgroundColor: '#ec4899', borderWidth: 4, pointRadius: 0 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                onClick: function(e, elements) {
+                    if (elements.length > 0) {
+                        let clickedIndex = elements[0].index;
+                        if (tooltipFrozen && frozenTooltipIndex === clickedIndex) {
+                            tooltipFrozen = false;
+                            frozenTooltipIndex = null;
+                        } else {
+                            tooltipFrozen = true;
+                            frozenTooltipIndex = clickedIndex;
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Monthly Cashflow ($)' },
+                        ticks: { callback: function(value) { return '$' + value.toLocaleString(); } }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Total Brokerage Value ($)' },
+                        grid: { drawOnChartArea: false },
+                        ticks: { callback: function(value) { return '$' + value.toLocaleString(); } }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed.y !== null) {
+                                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Unfreeze tooltip when clicking outside the chart
+    const chartCanvas = document.getElementById('lifeChart');
+    document.addEventListener('click', (e) => {
+        if (tooltipFrozen && !chartCanvas.contains(e.target)) {
+            tooltipFrozen = false;
+            frozenTooltipIndex = null;
+            if (lifeChartInstance) {
+                lifeChartInstance.tooltip.setActiveElements([], {x: 0, y: 0});
+                lifeChartInstance.update('none');
+            }
+        }
+    });
+
+    // --- Toggles ---
+    const rentalToggle = document.getElementById('rental_toggle');
+    const rentalFields = document.getElementById('rental_fields');
+    let rentalEnabled = true;
+
+    const halvingToggle = document.getElementById('halving_toggle');
+    const halvingFields = document.getElementById('halving_fields');
+    let halvingEnabled = false;
+
+    // --- LocalStorage persistence ---
+    const STORAGE_KEY = 'mortgage_calc_inputs';
+
+    function saveInputs() {
+        const data = {};
+        for (const [key, el] of Object.entries(inputs)) {
+            if (el && !el.readOnly) {
+                data[el.id] = el.value;
+            }
+        }
+        data._rentalEnabled = rentalEnabled;
+        data._halvingEnabled = halvingEnabled;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function loadInputs() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        try {
+            const data = JSON.parse(raw);
+            for (const [id, value] of Object.entries(data)) {
+                if (id.startsWith('_')) continue;
+                const el = document.getElementById(id);
+                if (el && !el.readOnly) {
+                    el.value = value;
+                }
+            }
+            if (data._rentalEnabled !== undefined) {
+                rentalEnabled = data._rentalEnabled;
+                rentalToggle.classList.toggle('active', rentalEnabled);
+                rentalFields.classList.toggle('visible', rentalEnabled);
+            }
+            if (data._halvingEnabled !== undefined) {
+                halvingEnabled = data._halvingEnabled;
+                halvingToggle.classList.toggle('active', halvingEnabled);
+                halvingFields.classList.toggle('visible', halvingEnabled);
+            }
+        } catch (e) { /* ignore corrupt data */ }
+    }
+
+    // Restore saved values before computing dependencies
+    loadInputs();
+
+    rentalToggle.addEventListener('click', () => {
+        rentalEnabled = !rentalEnabled;
+        rentalToggle.classList.toggle('active', rentalEnabled);
+        rentalFields.classList.toggle('visible', rentalEnabled);
+        saveInputs();
+        generateDataAndChart();
+    });
+
+    halvingToggle.addEventListener('click', () => {
+        halvingEnabled = !halvingEnabled;
+        halvingToggle.classList.toggle('active', halvingEnabled);
+        halvingFields.classList.toggle('visible', halvingEnabled);
+        saveInputs();
+        generateDataAndChart();
+    });
+
+    // Attach event listeners to all inputs to trigger formatting and recalculations
+    Object.values(inputs).forEach(input => {
+        if(input) {
+            input.addEventListener('input', (e) => {
+                formatCurrencyInput(e);
+                handleDependencies(e);
+                saveInputs();
+                generateDataAndChart();
+            });
+        }
+    });
+
+    // Initial calculation on load — trigger all dependency paths
+    ['purchase_price', 'mortgage_downpayment', 'prop_taxes_perc', 'total_investments_starting_with'].forEach(id => {
+        handleDependencies({target: {id}});
+    });
+    generateDataAndChart();
+</script>
+
+</body>
+</html>
