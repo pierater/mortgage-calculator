@@ -24,7 +24,8 @@
             margin: 0;
             padding: 20px;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            align-items: center;
         }
         .dashboard {
             display: flex;
@@ -186,12 +187,93 @@
             visibility: visible;
             opacity: 1;
         }
+
+        /* Hamburger button — hidden on desktop */
+        .hamburger {
+            display: none;
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 1001;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            line-height: 1;
+        }
+        .hamburger span {
+            display: block;
+            width: 22px;
+            height: 2px;
+            background: var(--text);
+            margin: 4px 0;
+            border-radius: 1px;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .hamburger.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+        .hamburger.open span:nth-child(2) { opacity: 0; }
+        .hamburger.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+        /* Overlay backdrop — hidden on desktop */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 999;
+        }
+        .sidebar-overlay.visible { display: block; }
+
+        /* Mobile styles */
+        @media (max-width: 768px) {
+            body { padding: 0; }
+            .hamburger { display: block; }
+            .dashboard {
+                flex-direction: column;
+                height: auto;
+                min-height: 100vh;
+                gap: 0;
+            }
+            .controls {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 85vw;
+                max-width: 360px;
+                height: 100vh;
+                border-radius: 0;
+                z-index: 1000;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+                padding-top: 56px;
+            }
+            .controls.open {
+                transform: translateX(0);
+            }
+            .chart-container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 0;
+                box-shadow: none;
+                border: none;
+                padding: 10px;
+                box-sizing: border-box;
+            }
+        }
     </style>
 </head>
 <body>
 
+<button class="hamburger" id="hamburger" aria-label="Toggle controls">
+    <span></span><span></span><span></span>
+</button>
+<div class="sidebar-overlay" id="sidebar_overlay"></div>
+
 <div class="dashboard">
-    <div class="controls">
+    <div class="controls" id="controls_panel">
         <div class="section-title">Home & Mortgage</div>
         
         <div class="input-group">
@@ -264,16 +346,51 @@
             <input type="number" step="0.01" min="0" id="prop_tax_increase_perc" value="0.02">
         </div>
 
+        <div class="input-group">
+            <label>
+                Monthly Insurance ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Total monthly insurance costs for the home (homeowner's insurance, PMI if applicable, umbrella, etc.).</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="monthly_insurance" value="500">
+        </div>
+
         <div class="section-title">Income & Spending</div>
         
         <div class="input-group">
             <label>
-                Post Tax W2 ($)
+                Gross W2 ($)
                 <div class="tooltip-container">?
-                    <span class="tooltip-text">Your annual take-home pay after taxes. Used to compute monthly cashflow.</span>
+                    <span class="tooltip-text">Your annual gross (pre-tax) W2 income. When filing jointly, this is the combined household total. Federal income tax is computed automatically using 2025 brackets + standard deduction.</span>
                 </div>
             </label>
-            <input type="text" data-type="currency" id="post_tax_w2" value="800,000">
+            <input type="text" data-type="currency" id="gross_w2" value="1,200,000">
+        </div>
+
+        <div class="toggle-group">
+            <div class="toggle-switch" id="mfj_toggle"></div>
+            <label>Married Filing Jointly</label>
+        </div>
+
+        <div class="input-group">
+            <label>
+                State Income Tax Rate (Decimal)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Flat state income tax rate applied to gross W2 income (e.g., 0.05 is 5%). Set to 0 for states with no income tax.</span>
+                </div>
+            </label>
+            <input type="number" step="0.001" min="0" max="1" id="state_tax_rate" value="0">
+        </div>
+
+        <div class="input-group">
+            <label>
+                Post Tax W2 ($)
+                <div class="tooltip-container">?
+                    <span class="tooltip-text">Your annual take-home pay after federal and state income tax. Automatically computed from Gross W2.</span>
+                </div>
+            </label>
+            <input type="text" data-type="currency" id="post_tax_w2" value="0" readonly>
         </div>
         
         <div class="toggle-group">
@@ -286,7 +403,7 @@
                 <label>
                     Years Before Halving Income
                     <div class="tooltip-container">?
-                        <span class="tooltip-text">The number of years before the Post Tax W2 income drops by exactly 50% (simulating part-time work or career downshifting).</span>
+                        <span class="tooltip-text">The number of years before the Gross W2 income drops by exactly 50% (simulating part-time work or career downshifting). Taxes are recomputed on the halved gross amount.</span>
                     </div>
                 </label>
                 <input type="number" min="0" max="30" id="years_before_halving_income" value="5">
@@ -450,6 +567,16 @@
                 </label>
                 <input type="number" step="0.01" min="0" id="rental_prop_tax_increase_perc" value="0.02">
             </div>
+
+            <div class="input-group">
+                <label>
+                    Monthly Rental Insurance ($)
+                    <div class="tooltip-container">?
+                        <span class="tooltip-text">Total monthly insurance costs for the rental property (landlord insurance, liability, etc.).</span>
+                    </div>
+                </label>
+                <input type="text" data-type="currency" id="rental_monthly_insurance" value="200">
+            </div>
         </div>
     </div>
 
@@ -471,6 +598,8 @@
         m_down_perc: document.getElementById('mortgage_downpayment_perc'),
         p_taxes_perc: document.getElementById('prop_taxes_perc'),
         p_taxes: document.getElementById('prop_taxes'),
+        gross_w2: document.getElementById('gross_w2'),
+        state_tax: document.getElementById('state_tax_rate'),
         post_w2: document.getElementById('post_tax_w2'),
         yrs_half_w2: document.getElementById('years_before_halving_income'),
         spend: document.getElementById('spending'),
@@ -488,7 +617,9 @@
         rent_m_monthly: document.getElementById('rental_mortgage_monthly'),
         rent_p_taxes: document.getElementById('rental_prop_taxes'),
         rent_p_tax_inc: document.getElementById('rental_prop_tax_increase_perc'),
-        p_tax_inc: document.getElementById('prop_tax_increase_perc')
+        rent_insurance: document.getElementById('rental_monthly_insurance'),
+        p_tax_inc: document.getElementById('prop_tax_increase_perc'),
+        insurance: document.getElementById('monthly_insurance')
     };
 
     // Helper to extract raw numbers from comma-formatted strings
@@ -539,6 +670,48 @@
         }
     }
 
+    // 2025 Federal income tax brackets + standard deduction
+    const TAX_CONFIG = {
+        single: {
+            standardDeduction: 15000,
+            brackets: [
+                { limit: 11925,  rate: 0.10 },
+                { limit: 48475,  rate: 0.12 },
+                { limit: 103350, rate: 0.22 },
+                { limit: 197300, rate: 0.24 },
+                { limit: 250525, rate: 0.32 },
+                { limit: 626350, rate: 0.35 },
+                { limit: Infinity, rate: 0.37 }
+            ]
+        },
+        mfj: {
+            standardDeduction: 30000,
+            brackets: [
+                { limit: 23850,  rate: 0.10 },
+                { limit: 96950,  rate: 0.12 },
+                { limit: 206700, rate: 0.22 },
+                { limit: 394600, rate: 0.24 },
+                { limit: 501050, rate: 0.32 },
+                { limit: 751600, rate: 0.35 },
+                { limit: Infinity, rate: 0.37 }
+            ]
+        }
+    };
+
+    function computeFederalTax(grossIncome) {
+        const config = mfjEnabled ? TAX_CONFIG.mfj : TAX_CONFIG.single;
+        const taxable = Math.max(0, grossIncome - config.standardDeduction);
+        let tax = 0;
+        let prev = 0;
+        for (const bracket of config.brackets) {
+            if (taxable <= prev) break;
+            const taxableInBracket = Math.min(taxable, bracket.limit) - prev;
+            tax += taxableInBracket * bracket.rate;
+            prev = bracket.limit;
+        }
+        return tax;
+    }
+
     // Auto-calculating relationships
     function handleDependencies(e) {
         const id = e.target.id;
@@ -559,6 +732,13 @@
             inputs.p_taxes.value = formatNum(price * taxPerc);
         }
 
+        if (id === 'gross_w2' || id === 'state_tax_rate') {
+            const gross = getNum(inputs.gross_w2.value);
+            const fedTax = computeFederalTax(gross);
+            const stateTax = gross * getNum(inputs.state_tax.value);
+            inputs.post_w2.value = formatNum(gross - fedTax - stateTax);
+        }
+
         if (id === 'total_investments_starting_with' || id === 'mortgage_downpayment' || id === 'purchase_price' || id === 'mortgage_downpayment_perc') {
             const totalInv = getNum(inputs.total_invest.value);
             const down = getNum(inputs.m_down.value);
@@ -571,7 +751,8 @@
         const p_price = getNum(inputs.p_price.value);
         const m_rate = getNum(inputs.m_rate.value);
         const m_down = getNum(inputs.m_down.value);
-        const post_w2 = getNum(inputs.post_w2.value);
+        const gross_w2 = getNum(inputs.gross_w2.value);
+        const state_tax_rate = getNum(inputs.state_tax.value);
         const p_taxes = getNum(inputs.p_taxes.value);
         const yrs_half_w2 = getNum(inputs.yrs_half_w2.value);
         const spend = getNum(inputs.spend.value);
@@ -587,7 +768,9 @@
         const rent_m_yrs = rentalEnabled ? getNum(inputs.rent_m_yrs.value) : 0;
         const rent_p_taxes = rentalEnabled ? getNum(inputs.rent_p_taxes.value) : 0;
         const rent_p_tax_inc = rentalEnabled ? getNum(inputs.rent_p_tax_inc.value) : 0;
+        const rent_insurance = rentalEnabled ? getNum(inputs.rent_insurance.value) : 0;
         const p_tax_inc = getNum(inputs.p_tax_inc.value);
+        const insurance = getNum(inputs.insurance.value);
 
         // Mortgage Calculation
         const P = p_price - m_down;
@@ -620,8 +803,9 @@
             // Fixed Mortgage
             mortgage_data.push(M);
             
-            // Net W2 Income (halves after X years)
-            let current_w2_annual = (halvingEnabled && year >= yrs_half_w2) ? (post_w2 / 2) : post_w2;
+            // Net W2 Income (halves gross before tax after X years)
+            let current_gross_w2 = (halvingEnabled && year >= yrs_half_w2) ? (gross_w2 / 2) : gross_w2;
+            let current_w2_annual = current_gross_w2 - computeFederalTax(current_gross_w2) - (current_gross_w2 * state_tax_rate);
             let current_w2_monthly = current_w2_annual / 12;
             w2_data.push(current_w2_monthly);
             
@@ -640,32 +824,27 @@
             // Rental Property Tax (grows yearly)
             let rental_prop_tax_monthly = (rent_p_taxes * Math.pow(1 + rent_p_tax_inc, year)) / 12;
 
-            // Gross Spending = base spend + property taxes + mortgage + rental mortgage + rental prop tax
+            // Gross Spending = base spend + property taxes + mortgage + insurance + rental mortgage + rental prop tax
             let effective_yrs_inc = Math.min(year, yrs_spend_inc);
             let current_spend_annual = spend * Math.pow(1 + spend_inc, effective_yrs_inc);
             if (current_spend_annual > max_spend) current_spend_annual = max_spend;
-            let gross_spend_monthly = (current_spend_annual / 12) + current_prop_tax_monthly + M + rental_mortgage_monthly + rental_prop_tax_monthly;
+            let gross_spend_monthly = (current_spend_annual / 12) + current_prop_tax_monthly + M + insurance + rental_mortgage_monthly + rental_prop_tax_monthly + rent_insurance;
             gross_spending_data.push(gross_spend_monthly);
 
             // Net Income = Total Income - Gross Spending
             let net_income_monthly = (current_w2_monthly + current_rent_monthly) - gross_spend_monthly;
+            net_income_data.push(net_income_monthly);
 
-            // Apply stock growth first
-            current_brokerage = current_brokerage * (1 + stock_growth / 12);
-
-            // If net income is negative, withdraw deficit from brokerage
+            // Brokerage: absorb surplus or cover deficit, then apply growth
             if (net_income_monthly < 0) {
                 let deficit = -net_income_monthly;
                 let withdrawal = Math.min(deficit, current_brokerage);
                 current_brokerage -= withdrawal;
-                // Net income is 0 when stocks cover the deficit, negative only if stocks run out
-                net_income_monthly = (withdrawal >= deficit) ? 0 : net_income_monthly + withdrawal;
             } else {
-                // Surplus goes into brokerage
                 current_brokerage += net_income_monthly;
             }
+            current_brokerage = current_brokerage * (1 + stock_growth / 12);
 
-            net_income_data.push(net_income_monthly);
             brokerage_data.push(current_brokerage);
         }
 
@@ -781,6 +960,9 @@
     const halvingFields = document.getElementById('halving_fields');
     let halvingEnabled = false;
 
+    const mfjToggle = document.getElementById('mfj_toggle');
+    let mfjEnabled = false;
+
     // --- LocalStorage persistence ---
     const STORAGE_KEY = 'mortgage_calc_inputs';
 
@@ -793,6 +975,7 @@
         }
         data._rentalEnabled = rentalEnabled;
         data._halvingEnabled = halvingEnabled;
+        data._mfjEnabled = mfjEnabled;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
@@ -818,6 +1001,10 @@
                 halvingToggle.classList.toggle('active', halvingEnabled);
                 halvingFields.classList.toggle('visible', halvingEnabled);
             }
+            if (data._mfjEnabled !== undefined) {
+                mfjEnabled = data._mfjEnabled;
+                mfjToggle.classList.toggle('active', mfjEnabled);
+            }
         } catch (e) { /* ignore corrupt data */ }
     }
 
@@ -840,6 +1027,14 @@
         generateDataAndChart();
     });
 
+    mfjToggle.addEventListener('click', () => {
+        mfjEnabled = !mfjEnabled;
+        mfjToggle.classList.toggle('active', mfjEnabled);
+        handleDependencies({target: {id: 'gross_w2'}});
+        saveInputs();
+        generateDataAndChart();
+    });
+
     // Attach event listeners to all inputs to trigger formatting and recalculations
     Object.values(inputs).forEach(input => {
         if(input) {
@@ -853,11 +1048,29 @@
     });
 
     // Initial calculation on load — trigger all dependency paths
-    ['purchase_price', 'mortgage_downpayment', 'prop_taxes_perc', 'total_investments_starting_with'].forEach(id => {
+    ['purchase_price', 'mortgage_downpayment', 'prop_taxes_perc', 'total_investments_starting_with', 'gross_w2'].forEach(id => {
         handleDependencies({target: {id}});
     });
     generateDataAndChart();
+
+    // --- Mobile sidebar ---
+    const hamburger = document.getElementById('hamburger');
+    const controlsPanel = document.getElementById('controls_panel');
+    const sidebarOverlay = document.getElementById('sidebar_overlay');
+
+    function toggleSidebar() {
+        const isOpen = controlsPanel.classList.toggle('open');
+        hamburger.classList.toggle('open', isOpen);
+        sidebarOverlay.classList.toggle('visible', isOpen);
+    }
+
+    hamburger.addEventListener('click', toggleSidebar);
+    sidebarOverlay.addEventListener('click', toggleSidebar);
 </script>
+
+<p style="text-align: center; font-size: 0.8rem; color: #94a3b8; margin-top: 12px;">
+    Feature requests, bugs, or questions? Email <a href="mailto:martin.almaraz@gmail.com" style="color: #64748b;">martin.almaraz@gmail.com</a>
+</p>
 
 </body>
 </html>
